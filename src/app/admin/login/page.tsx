@@ -6,22 +6,28 @@ import { useAuth } from "@/contexts/AuthContext";
 import { GoogleLoginButton } from "@/components/ui/GoogleLoginButton";
 
 export default function AdminLoginPage() {
-  const { user, loading, signInWithGoogle, signOutUser, isAdmin } = useAuth();
+  const {
+    user,
+    loading,
+    signInWithGoogle,
+    signOutUser,
+    isAdmin,
+    adminConfigured,
+  } = useAuth();
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/admin/products";
 
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // If already logged in as admin -> go to admin
   useEffect(() => {
-    if (!loading && user && isAdmin) {
-      router.replace(nextPath);
-    }
-    if (!loading && user && !isAdmin) {
-      // Logged in but not admin -> send away
-      router.replace("/");
-    }
+    if (loading) return;
+
+    // ✅ redirectinam tik kai tikrai žinom atsakymą
+    if (user && isAdmin === true) router.replace(nextPath);
+    if (user && isAdmin === false) router.replace("/");
+    // if (isAdmin === null) -> nieko nedarom (pvz. env nesukonfigūruotas)
   }, [loading, user, isAdmin, nextPath, router]);
 
   if (loading) {
@@ -39,6 +45,16 @@ export default function AdminLoginPage() {
         <p className="text-gray-600 mb-6">
           Sign in with your admin Google account.
         </p>
+
+        {/* ✅ aiški klaida jei prod'e neįdėtas NEXT_PUBLIC_ADMIN_EMAIL */}
+        {!adminConfigured && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6 text-left">
+            Missing <b>NEXT_PUBLIC_ADMIN_EMAIL</b> in production environment.
+            <div className="mt-2 text-sm text-red-700">
+              Add it in your hosting provider env vars and redeploy.
+            </div>
+          </div>
+        )}
 
         {authError && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
@@ -59,8 +75,8 @@ export default function AdminLoginPage() {
           }}
         />
 
-        {/* optional: show sign out if logged in but not admin */}
-        {user && !isAdmin && (
+        {/* show sign out if logged in but not admin */}
+        {user && isAdmin === false && (
           <div className="mt-6">
             <p className="text-sm text-gray-600 mb-3">
               You are logged in as <b>{user.email}</b> but not an admin.
@@ -80,6 +96,13 @@ export default function AdminLoginPage() {
             >
               Sign Out
             </button>
+          </div>
+        )}
+
+        {/* jei user yra, bet isAdmin null (pvz env nesukonfigūruotas) */}
+        {user && isAdmin === null && (
+          <div className="mt-6 text-sm text-neutral-600 text-left">
+            You are signed in as <b>{user.email}</b>, but admin access cannot be verified.
           </div>
         )}
       </div>
