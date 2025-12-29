@@ -3,9 +3,24 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Product } from "@/lib/types/product";
-import { getProducts, createProduct, updateProduct, deleteProduct } from "@/lib/db";
+import {
+  getProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+} from "@/lib/db";
 import { supabase, SUPABASE_BUCKET } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { ImageCropModal } from "@/components/admin/ImageCropModal";
+
+type ProductFormState = {
+  name: string;
+  slug: string;
+  price: string; // ✅ string UI layer
+  description: string;
+  images: string[];
+  isActive: boolean;
+};
 
 const AdminProductsPage = () => {
   const { isAdmin } = useAuth();
@@ -16,21 +31,37 @@ const AdminProductsPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const [productForm, setProductForm] = useState({
+  const [productForm, setProductForm] = useState<ProductFormState>({
     name: "",
     slug: "",
-    price: 0,
+    price: "",
     description: "",
-    images: [] as string[],
+    images: [],
     isActive: true,
   });
 
+  // po crop mes įdedam jau paruoštą failą čia
   const [newImage, setNewImage] = useState<File | null>(null);
+
+  // crop UI state
+  const [fileToCrop, setFileToCrop] = useState<File | null>(null);
+
+  // preview UI
+  const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ jei nustatai naują preview – vėliau (pvz cancel) nepamiršk revokint
+  useEffect(() => {
+    return () => {
+      if (croppedPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(croppedPreview);
+      }
+    };
+  }, [croppedPreview]);
 
   const fetchProducts = async () => {
     try {
@@ -48,34 +79,29 @@ const AdminProductsPage = () => {
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
-    const { name, value, type } = e.target;
+    const target = e.target as HTMLInputElement;
+    const { name, value, type, checked } = target;
 
     if (type === "checkbox") {
-      setProductForm({
-        ...productForm,
-        [name]: (e.target as HTMLInputElement).checked,
-      });
+      setProductForm((prev) => ({ ...prev, [name]: checked }));
       return;
     }
 
-    if (type === "number") {
-      setProductForm({
-        ...productForm,
-        [name]: Number(value),
-      });
-      return;
-    }
-
-    setProductForm({
-      ...productForm,
-      [name]: value,
-    });
+    setProductForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // ✅ vietoj tiesiog setNewImage, atidarom crop modalą
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setNewImage(e.target.files[0]);
+    const f = e.target.files?.[0];
+    if (!f) return;
+
+    // jei buvo senas preview (blob), atlaisvinam
+    if (croppedPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(croppedPreview);
     }
+
+    setFileToCrop(f);
+    e.currentTarget.value = ""; // leidžia vėl pasirinkti tą patį failą
   };
 
   const publicUrlFromPath = (path: string) => {
@@ -90,10 +116,18 @@ const AdminProductsPage = () => {
     return url.substring(idx + marker.length);
   };
 
-  const uploadImage = async (imageFile: File): Promise<string> => {
-    const ext = imageFile.name.split(".").pop() || "jpg";
+  // ✅ priima ir Blob ir File
+  const uploadImage = async (imageFile: Blob | File): Promise<string> => {
+    const file =
+      imageFile instanceof File
+        ? imageFile
+        : new File([imageFile], `cropped-${Date.now()}.jpg`, {
+            type: "image/jpeg",
+          });
+
+    const ext = file.name.split(".").pop() || "jpg";
     const safeBase =
-      imageFile.name
+      file.name
         .replace(/\.[^/.]+$/, "")
         .toLowerCase()
         .replace(/[^a-z0-9-_]/g, "-")
@@ -104,11 +138,13 @@ const AdminProductsPage = () => {
       .toString(16)
       .slice(2)}-${safeBase}.${ext}`;
 
-    const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(filePath, imageFile, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: imageFile.type || "image/jpeg",
-    });
+    const { error } = await supabase.storage
+      .from(SUPABASE_BUCKET)
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type || "image/jpeg",
+      });
 
     if (error) throw error;
 
@@ -117,9 +153,11 @@ const AdminProductsPage = () => {
 
   const deleteImage = async (imageUrl: string): Promise<void> => {
     const path = pathFromPublicUrl(imageUrl);
-    if (!path) return; // jei ne Supabase public url (mūsų bucket), praleidžiam
+    if (!path) return;
 
-    const { error } = await supabase.storage.from(SUPABASE_BUCKET).remove([path]);
+    const { error } = await supabase.storage
+      .from(SUPABASE_BUCKET)
+      .remove([path]);
     if (error) throw error;
   };
 
@@ -129,12 +167,18 @@ const AdminProductsPage = () => {
     setProductForm({
       name: "",
       slug: "",
-      price: 0,
+      price: "",
       description: "",
       images: [],
       isActive: true,
     });
     setNewImage(null);
+    setFileToCrop(null);
+
+    if (croppedPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(croppedPreview);
+    }
+    setCroppedPreview(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -145,19 +189,25 @@ const AdminProductsPage = () => {
       return;
     }
 
+    // ✅ convert price string -> number tik čia
+    const priceNumber = Number(productForm.price);
+    if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+      setError("Invalid price.");
+      return;
+    }
+
     try {
       setError(null);
 
       let imageUrls = [...productForm.images];
 
-      // jei uploadinam naują paveikslą
+      // jei uploadinam naują (cropped) paveikslą
       if (newImage) {
-        // jei redaguojam ir buvo senas paveikslas — ištrinam jį
+        // jei redaguojam ir buvo senas paveikslas — bandom ištrinti jį
         if (editingProduct && editingProduct.images?.length > 0) {
           try {
             await deleteImage(editingProduct.images[0]);
           } catch (deleteErr) {
-            // net jei delete nepavyko, nenutraukiam viso flow
             console.warn("Failed to delete old image (continuing).", deleteErr);
           }
         }
@@ -166,10 +216,19 @@ const AdminProductsPage = () => {
         imageUrls = [url]; // vienas paveikslas per produktą
       }
 
+      const payload = {
+        name: productForm.name,
+        slug: productForm.slug,
+        price: priceNumber,
+        description: productForm.description,
+        images: imageUrls,
+        isActive: productForm.isActive,
+      };
+
       if (editingProduct) {
-        await updateProduct(editingProduct.id, { ...productForm, images: imageUrls });
+        await updateProduct(editingProduct.id, payload);
       } else {
-        await createProduct({ ...productForm, images: imageUrls });
+        await createProduct(payload as any);
       }
 
       resetForm();
@@ -182,15 +241,24 @@ const AdminProductsPage = () => {
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
+
+    // išvalom seną preview
+    if (croppedPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(croppedPreview);
+    }
+
     setProductForm({
-      name: product.name,
-      slug: product.slug,
-      price: product.price,
-      description: product.description,
+      name: product.name ?? "",
+      slug: product.slug ?? "",
+      price: String(product.price ?? ""),
+      description: product.description ?? "",
       images: product.images || [],
-      isActive: product.isActive,
+      isActive: !!product.isActive,
     });
+
     setNewImage(null);
+    setFileToCrop(null);
+    setCroppedPreview(null);
     setShowForm(true);
   };
 
@@ -237,15 +305,24 @@ const AdminProductsPage = () => {
         onClick={() => {
           setShowForm(true);
           setEditingProduct(null);
+
+          // išvalom seną preview
+          if (croppedPreview?.startsWith("blob:")) {
+            URL.revokeObjectURL(croppedPreview);
+          }
+
           setProductForm({
             name: "",
             slug: "",
-            price: 0,
+            price: "",
             description: "",
             images: [],
             isActive: true,
           });
+
           setNewImage(null);
+          setFileToCrop(null);
+          setCroppedPreview(null);
         }}
         className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
         disabled={!isAdmin}
@@ -255,10 +332,7 @@ const AdminProductsPage = () => {
       </button>
 
       {showForm && (
-        <div
-          className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full"
-          id="my-modal"
-        >
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
           <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
             <h3 className="text-lg font-bold mb-4">
               {editingProduct ? "Edit Product" : "Create Product"}
@@ -272,7 +346,10 @@ const AdminProductsPage = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="name"
+                  className="block text-sm font-medium text-gray-700"
+                >
                   Name
                 </label>
                 <input
@@ -288,7 +365,10 @@ const AdminProductsPage = () => {
               </div>
 
               <div>
-                <label htmlFor="slug" className="block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="slug"
+                  className="block text-sm font-medium text-gray-700"
+                >
                   Slug
                 </label>
                 <input
@@ -304,7 +384,10 @@ const AdminProductsPage = () => {
               </div>
 
               <div>
-                <label htmlFor="price" className="block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="price"
+                  className="block text-sm font-medium text-gray-700"
+                >
                   Price
                 </label>
                 <input
@@ -318,11 +401,15 @@ const AdminProductsPage = () => {
                   min="0"
                   step="0.01"
                   disabled={!isAdmin}
+                  placeholder="0.00"
                 />
               </div>
 
               <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="description"
+                  className="block text-sm font-medium text-gray-700"
+                >
                   Description
                 </label>
                 <textarea
@@ -334,12 +421,15 @@ const AdminProductsPage = () => {
                   rows={4}
                   required
                   disabled={!isAdmin}
-                ></textarea>
+                />
               </div>
 
               <div>
-                <label htmlFor="image" className="block text-sm font-medium text-gray-700">
-                  Image
+                <label
+                  htmlFor="image"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Image (will crop to 4:3)
                 </label>
                 <input
                   type="file"
@@ -350,19 +440,42 @@ const AdminProductsPage = () => {
                   className="mt-1 block w-full"
                   disabled={!isAdmin}
                 />
-                {editingProduct?.images?.[0] && !newImage && (
-                  <p className="text-sm text-gray-500 mt-2">
-                    Current image:{" "}
-                    <a
-                      href={editingProduct.images[0]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      View Image
-                    </a>
-                  </p>
+
+                {/* ✅ Preview visada, jei turi croppedPreview */}
+                {croppedPreview && (
+                  <div className="mt-3">
+                    <p className="text-sm text-gray-500 mb-1">
+                      New image preview:
+                    </p>
+                    <div className="w-full">
+                      <img
+                        src={croppedPreview}
+                        alt="Cropped preview"
+                        className="w-full h-48 object-cover rounded-md border"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        (This is what will be uploaded)
+                      </p>
+                    </div>
+                  </div>
                 )}
+
+                {/* fallback: rodyti esamą tik jei nėra naujo preview */}
+                {editingProduct?.images?.[0] &&
+                  !newImage &&
+                  !croppedPreview && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Current image:{" "}
+                      <a
+                        href={editingProduct.images[0]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        View Image
+                      </a>
+                    </p>
+                  )}
               </div>
 
               <div className="flex items-center">
@@ -375,7 +488,10 @@ const AdminProductsPage = () => {
                   className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                   disabled={!isAdmin}
                 />
-                <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
+                <label
+                  htmlFor="isActive"
+                  className="ml-2 block text-sm text-gray-900"
+                >
                   Is Active
                 </label>
               </div>
@@ -399,6 +515,33 @@ const AdminProductsPage = () => {
               </div>
             </form>
           </div>
+
+          {/* ✅ Crop modal */}
+          {fileToCrop && (
+            <ImageCropModal
+              file={fileToCrop}
+              aspect={4 / 3}
+              onCancel={() => setFileToCrop(null)}
+              onCropped={({ blob, previewUrl }: { blob: Blob; previewUrl: string }) => {
+                // sukuriam File uploadui
+                const croppedFile = new File(
+                  [blob],
+                  `product-${Date.now()}.jpg`,
+                  { type: "image/jpeg" }
+                );
+
+                setNewImage(croppedFile);
+
+                // pakeičiam preview (revokinam seną jei reikia)
+                if (croppedPreview?.startsWith("blob:")) {
+                  URL.revokeObjectURL(croppedPreview);
+                }
+                setCroppedPreview(previewUrl);
+
+                setFileToCrop(null);
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -419,14 +562,18 @@ const AdminProductsPage = () => {
               <tr key={product.id}>
                 <td className="py-2 px-4 border-b">{product.name}</td>
                 <td className="py-2 px-4 border-b">{product.slug}</td>
-                <td className="py-2 px-4 border-b">${product.price.toFixed(2)}</td>
-                <td className="py-2 px-4 border-b">{product.isActive ? "Yes" : "No"}</td>
+                <td className="py-2 px-4 border-b">
+                  €{Number(product.price).toFixed(2)}
+                </td>
+                <td className="py-2 px-4 border-b">
+                  {product.isActive ? "Yes" : "No"}
+                </td>
                 <td className="py-2 px-4 border-b">
                   {product.images && product.images.length > 0 && (
                     <img
                       src={product.images[0]}
                       alt={product.name}
-                      className="w-16 h-16 object-cover"
+                      className="w-16 h-16 object-cover rounded"
                     />
                   )}
                 </td>
