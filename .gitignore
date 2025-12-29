@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+.turbo/
+.vercel/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Env files (SECRETS!)
+.env
+.env.*.local
+!.env.example
+
+# Firebase / Google / service keys
+*.pem
+*.p12
+*.key
+serviceAccount*.json
+firebase-debug.log*
+.firestore/
+firebase-export-*/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Coverage / tests
+coverage/
+playwright-report/
+test-results/
+
+# Misc
+.history/
+
+src/secrets/
+
+.env.local
+.env.*.local
