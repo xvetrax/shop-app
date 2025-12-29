@@ -1,14 +1,7 @@
-// src/lib/types/order.ts
 import type { CartItem } from "./cart";
 
 export type DeliveryMethod = "omniva" | "lp-express" | "pastomatai";
-
-export type OrderStatus =
-  | "pending"
-  | "paid"
-  | "failed"
-  | "cancelled"
-  | "shipped";
+export type OrderStatus = "pending" | "paid" | "failed" | "shipped";
 
 export type Customer = {
   name: string;
@@ -24,10 +17,16 @@ export interface Order {
   id: string;
   items: CartItem[];
   total: number;
-  customer: Customer;              // ✅ vietoj customerEmail
   status: OrderStatus;
-  currency: "EUR";                 // ✅ kad sutaptų su checkout route
-  paymentProvider: string;         // ✅ pvz "opay-mock"
   createdAt: Date;
   updatedAt?: Date;
+
+  // ✅ naujas formatas (kaip rašai į Firestore dabar)
+  customer: Customer;
+
+  // ✅ paliekam dėl backward compatibility (jei turi senų orderių)
+  customerEmail?: string;
+
+  currency?: "EUR";
+  paymentProvider?: "opay-mock" | string;
 }

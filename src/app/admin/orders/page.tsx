@@ -61,7 +61,9 @@ const AdminOrdersPage = () => {
             {orders.map((order) => (
               <tr key={order.id}>
                 <td className="py-2 px-4 border-b">{order.id}</td>
-                <td className="py-2 px-4 border-b">{order.customerEmail}</td>
+                <td className="py-2 px-4 border-b">
+                  {order.customer?.email ?? order.customerEmail ?? "-"}
+                  </td>
                 <td className="py-2 px-4 border-b">${order.total.toFixed(2)}</td>
                 <td className="py-2 px-4 border-b">{order.status}</td>
                 <td className="py-2 px-4 border-b">{new Date(order.createdAt).toLocaleDateString()}</td>
