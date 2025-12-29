@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { Order, OrderStatus } from "@/lib/types/order";
 import { getOrders, updateOrderStatus } from "@/lib/db";
 
@@ -11,7 +12,6 @@ function fmtMoney(n: any) {
 
 function fmtDate(d: any) {
   try {
-    // Firestore Timestamp support (jei kartais taip ateina)
     const date =
       d?.toDate?.() instanceof Date ? d.toDate() : d instanceof Date ? d : new Date(d);
     return isNaN(date.getTime()) ? "-" : date.toLocaleString();
@@ -62,7 +62,7 @@ export default function AdminOrdersPage() {
         prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
       );
 
-      // tada persikraunam iš DB (kad atsinaujintų visos detalės)
+      // persikraunam iš DB (kad atsinaujintų visos detalės)
       await fetchOrders();
     } catch (err) {
       setError("Failed to update order status.");
@@ -80,6 +80,14 @@ export default function AdminOrdersPage() {
       return new Date(db).getTime() - new Date(da).getTime();
     });
   }, [orders]);
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      console.warn("Clipboard copy failed", e);
+    }
+  };
 
   if (loading) return <p>Loading orders...</p>;
   if (error) return <p className="text-red-500">Error: {error}</p>;
@@ -106,11 +114,8 @@ export default function AdminOrdersPage() {
             {sortedOrders.map((order) => {
               const email = order.customer?.email ?? order.customerEmail ?? "-";
 
-              // naujas breakdown (jei turi)
               const itemsTotal =
-                typeof (order as any).itemsTotal === "number"
-                  ? (order as any).itemsTotal
-                  : null;
+                typeof (order as any).itemsTotal === "number" ? (order as any).itemsTotal : null;
               const shipping =
                 typeof (order as any).shipping === "number" ? (order as any).shipping : null;
 
@@ -126,14 +131,25 @@ export default function AdminOrdersPage() {
               return (
                 <tr key={order.id} className="align-top">
                   <td className="py-2 px-4 border-b">
-                    <div className="font-mono text-xs">{order.id}</div>
+                    <div className="flex flex-col gap-2">
+                      <div className="font-mono text-xs break-all">{order.id}</div>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => copyText(order.id)}
+                          className="text-xs text-blue-600 hover:underline"
+                          title="Copy order ID"
+                        >
+                          copy
+                        </button>
+                      </div>
+                    </div>
                   </td>
 
                   <td className="py-2 px-4 border-b">
                     <div className="font-medium">{email}</div>
-                    <div className="text-neutral-500">
-                      {order.customer?.name ? order.customer.name : ""}
-                    </div>
+                    <div className="text-neutral-500">{order.customer?.name ?? ""}</div>
                   </td>
 
                   <td className="py-2 px-4 border-b">
@@ -193,23 +209,30 @@ export default function AdminOrdersPage() {
                     )}
                   </td>
 
-                  <td className="py-2 px-4 border-b text-neutral-600">
-                    {fmtDate(order.createdAt)}
-                  </td>
+                  <td className="py-2 px-4 border-b text-neutral-600">{fmtDate(order.createdAt)}</td>
 
-                  <td className="py-2 px-4 border-b">
-                    {isShipped ? (
-                      <span className="text-xs text-neutral-500">—</span>
-                    ) : (
-                      <button
-                        onClick={() => handleStatusChange(order.id, "shipped")}
-                        disabled={isUpdating}
-                        className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-3 py-1 rounded text-xs"
-                      >
-                        {isUpdating ? "Updating..." : "Mark as shipped"}
-                      </button>
-                    )}
-                  </td>
+                <td className="py-2 px-4 border-b">
+  <div className="flex flex-wrap gap-2">
+    <Link
+      href={`/admin/orders/${order.id}`}
+      className="inline-flex items-center rounded bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-200"
+    >
+      View
+    </Link>
+
+    {isShipped ? (
+      <span className="text-xs text-neutral-500">—</span>
+    ) : (
+      <button
+        onClick={() => handleStatusChange(order.id, "shipped")}
+        disabled={isUpdating}
+        className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-3 py-1 rounded text-xs"
+      >
+        {isUpdating ? "Updating..." : "Mark as shipped"}
+      </button>
+    )}
+  </div>
+</td>
                 </tr>
               );
             })}

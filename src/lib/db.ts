@@ -147,3 +147,19 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
   const orderRef = doc(db, "orders", orderId);
   await updateDoc(orderRef, { status });
 }
+
+export async function getOrderById(orderId: string): Promise<Order | null> {
+  const ref = doc(db, "orders", orderId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+
+  const data: any = snap.data();
+
+  return {
+    id: snap.id,
+    ...data,
+    createdAt: toDateSafe(data.createdAt) ?? new Date(),
+    updatedAt: toDateSafe(data.updatedAt),
+  } as Order;
+}
+
