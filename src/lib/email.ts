@@ -17,14 +17,34 @@ type PaidOrderEmailParams = {
   };
 };
 
-export async function sendPaidOrderEmail(params: PaidOrderEmailParams) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("Missing env: RESEND_API_KEY");
+const apiKey = process.env.RESEND_API_KEY;
+if (!apiKey) {
+  throw new Error("Missing env: RESEND_API_KEY");
+}
+const resend = new Resend(apiKey);
 
+function fmt(n: number) {
+  const x = Number.isFinite(n) ? n : 0;
+  return x.toFixed(2);
+}
+
+function escapeHtml(input?: string | null) {
+  const s = String(input ?? "");
+  return s.replace(/[&<>"']/g, (c) => {
+    const map: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    };
+    return map[c] ?? c;
+  });
+}
+
+export async function sendPaidOrderEmail(params: PaidOrderEmailParams) {
   const from = process.env.EMAIL_FROM;
   if (!from) throw new Error("Missing env: EMAIL_FROM");
-
-  const resend = new Resend(apiKey);
 
   const { to, orderId, total, currency, items, shipping } = params;
 
@@ -83,28 +103,43 @@ export async function sendPaidOrderEmail(params: PaidOrderEmailParams) {
   `;
 
   await resend.emails.send({
-  from,
-  to,
-  subject: `Užsakymas apmokėtas (#${orderId ?? "—"})`,
-  html,
-});
+    from,
+    to,
+    subject: `Užsakymas apmokėtas (#${orderId || "—"})`,
+    html,
+  });
 }
 
-function fmt(n: number) {
-  const x = Number.isFinite(n) ? n : 0;
-  return x.toFixed(2);
-}
+export async function sendContactEmail(params: {
+  name: string;
+  email: string;
+  message: string;
+}) {
+  const from = process.env.EMAIL_FROM;
+  const to = process.env.CONTACT_TO_EMAIL;
 
-function escapeHtml(input?: string | null) {
-  const s = String(input ?? "");
-  return s.replace(/[&<>"']/g, (c) => {
-    const map: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return map[c] ?? c;
+  if (!from) throw new Error("Missing env: EMAIL_FROM");
+  if (!to) throw new Error("Missing env: CONTACT_TO_EMAIL");
+
+  const subject = `Contact forma: ${params.name}`;
+
+  const html = `
+    <div style="font-family:ui-sans-serif,system-ui;line-height:1.45">
+      <h2>Nauja žinutė iš Contact formos</h2>
+      <p><b>Vardas:</b> ${escapeHtml(params.name)}</p>
+      <p><b>El. paštas:</b> ${escapeHtml(params.email)}</p>
+      <p><b>Žinutė:</b></p>
+      <pre style="white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:8px">${escapeHtml(
+        params.message
+      )}</pre>
+    </div>
+  `;
+
+  await resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    replyTo: params.email,
   });
 }

@@ -11,22 +11,40 @@ export type Customer = {
   city: string;
   postalCode: string;
   deliveryMethod: DeliveryMethod;
+
+  // Omniva paštomatas (privalomas tik jei deliveryMethod === "omniva")
+  pickupPointId?: string;
+
+  // Vartotojo komentaras dėl siuntimo / užsakymo
+  comment?: string;
 };
 
 export interface Order {
   id: string;
   items: CartItem[];
+
+  // Breakdown
+  itemsTotal: number;
+  shippingCost: number;
   total: number;
+
   status: OrderStatus;
   createdAt: Date;
   updatedAt?: Date;
 
-  // ✅ naujas formatas (kaip rašai į Firestore dabar)
   customer: Customer;
 
-  // ✅ paliekam dėl backward compatibility (jei turi senų orderių)
+  // backward compatibility
   customerEmail?: string;
 
   currency?: "EUR";
   paymentProvider?: "opay-mock" | string;
+
+  // patogumui admin / email (nebūtina laikyti, bet ok jei laikysi)
+  pickupPoint?: {
+    id: string;
+    name: string;
+    address: string;
+    city?: string;
+  } | null;
 }
